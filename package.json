@@ -1,0 +1,21 @@
+{
+  "name": "avc-08-tilger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:tilger": "vite --open /main.html",
+    "build": "vite build",
+    "preview": "vite preview",
+    "template:update": "npm install Seren200018/Vorlesung-Skript-Template#Latest",
+    "template:assets": "node tools/sync-template-assets.js",
+    "postinstall": "node tools/sync-template-assets.js"
+  },
+  "dependencies": {
+    "avc-script-template": "github:Seren200018/Vorlesung-Skript-Template#Latest"
+  },
+  "devDependencies": {
+    "vite": "^6.4.1"
+  }
+}
