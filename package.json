@@ -13,7 +13,9 @@
     "postinstall": "node tools/sync-template-assets.js"
   },
   "dependencies": {
-    "avc-script-template": "github:Seren200018/Vorlesung-Skript-Template#Latest"
+    "avc-script-template": "github:Seren200018/Vorlesung-Skript-Template#Latest",
+    "mathjs": "^12.6.0",
+    "roughjs": "^4.6.6"
   },
   "devDependencies": {
     "vite": "^6.4.1"
