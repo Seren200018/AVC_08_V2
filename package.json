@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "avc-script-template": "github:Seren200018/Vorlesung-Skript-Template#Latest",
-    "mathjs": "^12.6.0",
+    "mathjs": "latest",
     "roughjs": "^4.6.6"
   },
   "devDependencies": {
