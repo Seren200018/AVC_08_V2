@@ -975,22 +975,20 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const layoutScale = getLayoutScale();
-    const renderScale = Math.max(1, 1 / (layoutScale || 1));
-    width = rect.width;
-    height = rect.height;
-    canvas.style.width = `${Math.round(width)}px`;
-    canvas.style.height = `${Math.round(height)}px`;
-    const backingScale = dpr * renderScale;
-    canvas.width = Math.max(1, Math.floor(width * backingScale));
-    canvas.height = Math.max(1, Math.floor(height * backingScale));
+    const layoutWidth = canvas.clientWidth || rect.width;
+    const layoutHeight = canvas.clientHeight || rect.height;
+    width = layoutWidth;
+    height = layoutHeight;
+    const backingScale = dpr * (layoutScale || 1);
+    canvas.width = Math.max(1, Math.floor(layoutWidth * backingScale));
+    canvas.height = Math.max(1, Math.floor(layoutHeight * backingScale));
     ctx.setTransform(backingScale, 0, 0, backingScale, 0, 0);
     ctx.imageSmoothingEnabled = false;
     lastLayoutScale = layoutScale || 1;
 
     const bodeRect = bodeMount.getBoundingClientRect();
-    const bodeStyles = getComputedStyle(bodeMount);
-    bodeWidth = bodeRect.width || parseFloat(bodeStyles.width) || 300;
-    bodeHeight = bodeRect.height || parseFloat(bodeStyles.height) || 250;
+    bodeWidth = bodeMount.clientWidth || bodeRect.width || 300;
+    bodeHeight = bodeMount.clientHeight || bodeRect.height || 250;
     if (bodeBoard) {
       bodeBoard.resizeContainer(bodeWidth, bodeHeight);
     }
