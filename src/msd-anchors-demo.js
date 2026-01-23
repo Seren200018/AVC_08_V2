@@ -189,6 +189,32 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   let bodeBoard = null;
   let centerX = 0;
   let groundY = 0;
+  let lastLayoutScale = 1;
+
+  const getLayoutScale = () => {
+    const layout = document.getElementById("main-layout");
+    if (!layout) {
+      return 1;
+    }
+    const styles = getComputedStyle(layout);
+    const cssScale = parseFloat(styles.getPropertyValue("--sheet-scale"));
+    if (Number.isFinite(cssScale) && cssScale > 0) {
+      return cssScale;
+    }
+    const transform = styles.transform;
+    if (transform && transform !== "none") {
+      try {
+        const m = new DOMMatrixReadOnly(transform);
+        const scaleX = Math.hypot(m.a, m.b);
+        const scaleY = Math.hypot(m.c, m.d);
+        const avgScale = (scaleX + scaleY) / 2;
+        return avgScale || 1;
+      } catch (err) {
+        return 1;
+      }
+    }
+    return 1;
+  };
 
   // --- Visual MSD elements (bottom + tuned mass) ---
   const msdBottom = new MassSpringDamper({
@@ -948,14 +974,18 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    const layoutScale = getLayoutScale();
+    const renderScale = Math.max(1, 1 / (layoutScale || 1));
     width = rect.width;
     height = rect.height;
     canvas.style.width = `${Math.round(width)}px`;
     canvas.style.height = `${Math.round(height)}px`;
-    canvas.width = Math.max(1, Math.floor(width * dpr));
-    canvas.height = Math.max(1, Math.floor(height * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const backingScale = dpr * renderScale;
+    canvas.width = Math.max(1, Math.floor(width * backingScale));
+    canvas.height = Math.max(1, Math.floor(height * backingScale));
+    ctx.setTransform(backingScale, 0, 0, backingScale, 0, 0);
     ctx.imageSmoothingEnabled = false;
+    lastLayoutScale = layoutScale || 1;
 
     const bodeRect = bodeMount.getBoundingClientRect();
     const bodeStyles = getComputedStyle(bodeMount);
@@ -1037,6 +1067,10 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
       return;
     }
     const t = (now - StartTime) / 1000;
+    const currentScale = getLayoutScale();
+    if (Math.abs(currentScale - lastLayoutScale) > 0.001) {
+      resize();
+    }
 
     // Sync model matrices if any inputs changed.
     syncSystemParameters();
