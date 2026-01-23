@@ -1,4 +1,3 @@
-import "./template-assets/avc-script-template.css";
 import initTemplate from "./template-assets/avc-script-template.es.js";
 import { initMassSpringDamperAnchorsDemo } from "./msd-anchors-demo.js";
 
