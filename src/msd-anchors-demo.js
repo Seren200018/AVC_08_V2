@@ -162,9 +162,41 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   timeMount.style.height = "260px";
   timeMount.style.border = "none";
   timeMount.style.background = bodeColors.background;
+  const timeScenarioOptions = [
+    { value: "force", label: "Actuated by force" },
+    { value: "initial", label: "Initial displacement x1 = 0.1" },
+    { value: "ground", label: "Ground step 0→0.1 at 1s, 0.1→0 at 2s" },
+  ];
+  let timeScenario = "force";
+  const timeScenarioRow = document.createElement("label");
+  timeScenarioRow.style.display = "flex";
+  timeScenarioRow.style.alignItems = "center";
+  timeScenarioRow.style.gap = "8px";
+  timeScenarioRow.style.fontSize = "12px";
+  timeScenarioRow.style.color = "#111";
+  const timeScenarioLabel = document.createElement("span");
+  timeScenarioLabel.textContent = "Time plot:";
+  const timeScenarioSelect = document.createElement("select");
+  timeScenarioSelect.style.padding = "2px 6px";
+  timeScenarioSelect.style.fontSize = "12px";
+  timeScenarioOptions.forEach((option) => {
+    const opt = document.createElement("option");
+    opt.value = option.value;
+    opt.textContent = option.label;
+    timeScenarioSelect.appendChild(opt);
+  });
+  timeScenarioSelect.value = timeScenario;
+  timeScenarioRow.appendChild(timeScenarioLabel);
+  timeScenarioRow.appendChild(timeScenarioSelect);
   if (timeTarget) {
     timeTarget.innerHTML = "";
-    timeTarget.appendChild(timeMount);
+    const timeWrap = document.createElement("div");
+    timeWrap.style.display = "flex";
+    timeWrap.style.flexDirection = "column";
+    timeWrap.style.gap = "6px";
+    timeWrap.appendChild(timeScenarioRow);
+    timeWrap.appendChild(timeMount);
+    timeTarget.appendChild(timeWrap);
   } else {
     // Time plot figure (full-width, below the main layout).
     const timeFigure = document.createElement("figure");
@@ -180,6 +212,7 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     timeCaption.style.fontSize = "12px";
     timeCaption.style.color = "#333";
     timeFigure.appendChild(timeCaption);
+    timeFigure.appendChild(timeScenarioRow);
     timeFigure.appendChild(timeMount);
   }
 
@@ -609,6 +642,18 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     snapHz: 0.08,
   };
 
+  const smoothStep = (t, t0, t1) => {
+    if (t <= t0) return 0;
+    if (t >= t1) return 1;
+    const s = (t - t0) / (t1 - t0);
+    return s * s * (3 - 2 * s);
+  };
+  const smoothStepDerivative = (t, t0, t1) => {
+    if (t <= t0 || t >= t1) return 0;
+    const s = (t - t0) / (t1 - t0);
+    return (6 * s * (1 - s)) / (t1 - t0);
+  };
+
   const computeTimeSeries = () => {
     const sampleCount = Math.floor(timeWindowSec / timeSampleStep) + 1;
     timeHistory.length = sampleCount;
@@ -616,6 +661,9 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     disp2History.length = sampleCount;
     forceHistory.length = sampleCount;
     forceScaledHistory.length = sampleCount;
+    const startPositions =
+      timeScenario === "initial" ? [0.1, 0] : defaultPositions.slice();
+    const startVelocities = defaultVelocities.slice();
     const activeTopDamping = tunedMassDamperEnabled ? topDamping : 0;
     const activeTopStiffness = tunedMassDamperEnabled ? topStiffness : 0;
     const dampingMatrix = math.matrix([
@@ -634,17 +682,34 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
       Massmatrix: massMatrix,
       Stiffnessmatrix: stiffnessMatrix,
       Dampingmatrix: dampingMatrix,
-      StartingPositions: defaultPositions,
-      StartingVelocities: defaultVelocities,
+      StartingPositions: startPositions,
+      StartingVelocities: startVelocities,
       NumMasses: 2,
     });
-    previewSystem.AppliedForceParameters = {
-      ForceType: "sine",
-      Amplitude: ForceAmplitude,
-      Forcefrequency: forceFrequency,
-      ForceRampStart: forceRampStart,
-      ForceRampupTime: forceRampupTime,
-    };
+    if (timeScenario === "force") {
+      previewSystem.AppliedForceParameters = {
+        ForceType: "sine",
+        Amplitude: ForceAmplitude,
+        Forcefrequency: forceFrequency,
+        ForceRampStart: forceRampStart,
+        ForceRampupTime: forceRampupTime,
+      };
+    } else if (timeScenario === "initial") {
+      previewSystem.calcForceAtTime = () => [0, 0];
+    } else if (timeScenario === "ground") {
+      const ramp = 0.05;
+      previewSystem.calcForceAtTime = (t) => {
+        const up = smoothStep(t, 1, 1 + ramp);
+        const down = smoothStep(t, 2, 2 + ramp);
+        const xg = 0.1 * (up - down);
+        const xgDot =
+          0.1 *
+          (smoothStepDerivative(t, 1, 1 + ramp) -
+            smoothStepDerivative(t, 2, 2 + ramp));
+        const baseForce = BottomStiffness * xg + BottomDamping * xgDot;
+        return [baseForce, 0];
+      };
+    }
     let maxAbsDisp = 0;
     let maxAbsForce = 0;
     for (let i = 0; i < sampleCount; i += 1) {
@@ -850,6 +915,12 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     timeBoard.setBoundingBox(getTimeBoundingBox(), false);
     timeBoard.update();
   };
+
+  timeScenarioSelect.addEventListener("change", () => {
+    timeScenario = timeScenarioSelect.value;
+    computeTimeSeries();
+    updateTimePlot(0);
+  });
 
   // Pick a nice tick spacing based on range and target tick count.
   const getNiceStep = (range, ticks) => {
