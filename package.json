@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "dev:tilger": "vite --open /main.html",
+    "dev:debug": "vite --mode debug --open /main.html",
     "build": "vite build",
     "build:pages": "vite build",
+    "build:debug": "vite build --mode debug",
     "preview": "vite preview",
     "template:update": "npm install Seren200018/Vorlesung-Skript-Template#Latest",
     "template:assets": "node tools/sync-template-assets.js",

@@ -8,6 +8,9 @@ import { create, all } from "mathjs";
 
 const math = create(all);
 
+const DEFAULT_DEBUG =
+  (import.meta?.env?.VITE_DEBUG || "").toString().toLowerCase() === "true" ||
+  import.meta?.env?.MODE === "debug";
 
 export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   // Entry point: build the UI and start the animation loop.
@@ -38,6 +41,10 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     background: jsxColors.background || "#fff",
     border: jsxColors.border || "#ddd",
   };
+  const debugState = {
+    enabled: options.debug ?? DEFAULT_DEBUG,
+    showToggle: options.debugControls ?? DEFAULT_DEBUG,
+  };
 
   // Cleanup any prior instance attached to the same DOM node.
   if (target._msdAnchorsCleanup) {
@@ -55,6 +62,11 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     options.controlsTarget ||
     (typeof options.controlsTargetId === "string"
       ? document.getElementById(options.controlsTargetId)
+      : null);
+  const timeTarget =
+    options.timeTarget ||
+    (typeof options.timeTargetId === "string"
+      ? document.getElementById(options.timeTargetId)
       : null);
 
   target.innerHTML = "";
@@ -96,7 +108,8 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   bodePane.style.alignItems = "flex-start";
   bodePane.style.gap = "8px";
   if (useWrap) {
-    bodePane.style.flex = "0 0 300px";
+    bodePane.style.flex = "1 1 0";
+    bodePane.style.width = "100%";
   } else {
     bodePane.style.width = "100%";
   }
@@ -143,6 +156,33 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   bodeMount.style.background = bodeColors.background;
   bodePane.appendChild(bodeMount);
 
+  const timeMount = document.createElement("div");
+  timeMount.id = `msd-time-${Math.random().toString(36).slice(2)}`;
+  timeMount.style.width = "100%";
+  timeMount.style.height = "260px";
+  timeMount.style.border = "none";
+  timeMount.style.background = bodeColors.background;
+  if (timeTarget) {
+    timeTarget.innerHTML = "";
+    timeTarget.appendChild(timeMount);
+  } else {
+    // Time plot figure (full-width, below the main layout).
+    const timeFigure = document.createElement("figure");
+    timeFigure.style.display = "flex";
+    timeFigure.style.flexDirection = "column";
+    timeFigure.style.gap = "6px";
+    timeFigure.style.margin = "10px 0 0 0";
+    timeFigure.style.width = "100%";
+    target.appendChild(timeFigure);
+
+    const timeCaption = document.createElement("figcaption");
+    timeCaption.textContent = "Zeitverlauf (0–20 s)";
+    timeCaption.style.fontSize = "12px";
+    timeCaption.style.color = "#333";
+    timeFigure.appendChild(timeCaption);
+    timeFigure.appendChild(timeMount);
+  }
+
   const createLegendItem = (label, color, dashed = false) => {
     const row = document.createElement("div");
     row.style.display = "flex";
@@ -187,6 +227,20 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   let bodeWidth = 0;
   let bodeHeight = 0;
   let bodeBoard = null;
+  let timeWidth = 0;
+  let timeHeight = 0;
+  let timeBoard = null;
+  let timeDirty = true;
+  const timeWindowSec = 20;
+  const timeYBase = 0.25;
+  let timeYRange = timeYBase;
+  const timeSampleStep = 0.05;
+  const timeHistory = [];
+  const disp1History = [];
+  const disp2History = [];
+  const forceHistory = [];
+  const forceScaledHistory = [];
+  let timeTickStep = null;
   let centerX = 0;
   let groundY = 0;
   let lastLayoutScale = 1;
@@ -462,6 +516,11 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     });
     MSDTimeSystem2.lastanim = 0;
     MSDTimeSystem2.Starttime = 0;
+    timeHistory.length = 0;
+    disp1History.length = 0;
+    disp2History.length = 0;
+    timeDirty = true;
+    computeTimeSeries();
   };
 
   // --- Controls: TMD switch + reset + sliders ---
@@ -485,6 +544,15 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     resetSimulation();
   });
   controls.appendChild(resetButton);
+  if (debugState.showToggle) {
+    createToggleSwitch({
+      label: "Debug overlay",
+      checked: debugState.enabled,
+      onChange: (enabled) => {
+        debugState.enabled = enabled;
+      },
+    });
+  }
 
   // Tuned mass sliders (disabled when TMD is off).
   topMassControl = createSlider({
@@ -541,6 +609,71 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     snapHz: 0.08,
   };
 
+  const computeTimeSeries = () => {
+    const sampleCount = Math.floor(timeWindowSec / timeSampleStep) + 1;
+    timeHistory.length = sampleCount;
+    disp1History.length = sampleCount;
+    disp2History.length = sampleCount;
+    forceHistory.length = sampleCount;
+    forceScaledHistory.length = sampleCount;
+    const activeTopDamping = tunedMassDamperEnabled ? topDamping : 0;
+    const activeTopStiffness = tunedMassDamperEnabled ? topStiffness : 0;
+    const dampingMatrix = math.matrix([
+      [BottomDamping + activeTopDamping, -activeTopDamping],
+      [-activeTopDamping, activeTopDamping],
+    ]);
+    const stiffnessMatrix = math.matrix([
+      [BottomStiffness + activeTopStiffness, -activeTopStiffness],
+      [-activeTopStiffness, activeTopStiffness],
+    ]);
+    const massMatrix = math.matrix([
+      [BottomMass, 0],
+      [0, topMass],
+    ]);
+    const previewSystem = new MassSpringDamperSystemTimeFreqDomainHandmade({
+      Massmatrix: massMatrix,
+      Stiffnessmatrix: stiffnessMatrix,
+      Dampingmatrix: dampingMatrix,
+      StartingPositions: defaultPositions,
+      StartingVelocities: defaultVelocities,
+      NumMasses: 2,
+    });
+    previewSystem.AppliedForceParameters = {
+      ForceType: "sine",
+      Amplitude: ForceAmplitude,
+      Forcefrequency: forceFrequency,
+      ForceRampStart: forceRampStart,
+      ForceRampupTime: forceRampupTime,
+    };
+    let maxAbsDisp = 0;
+    let maxAbsForce = 0;
+    for (let i = 0; i < sampleCount; i += 1) {
+      const t = i * timeSampleStep;
+      const state = previewSystem.stepSimulation(t);
+      const pos = state.position.toArray();
+      const force = previewSystem.calcForceAtTime(t);
+      timeHistory[i] = t;
+      disp1History[i] = pos[0];
+      disp2History[i] = pos[1];
+      forceHistory[i] = Array.isArray(force) ? force[0] : force;
+      const absDisp = Math.max(Math.abs(pos[0] ?? 0), Math.abs(pos[1] ?? 0));
+      if (absDisp > maxAbsDisp) {
+        maxAbsDisp = absDisp;
+      }
+      const absForce = Math.abs(forceHistory[i] ?? 0);
+      if (absForce > maxAbsForce) {
+        maxAbsForce = absForce;
+      }
+    }
+    timeYRange = Math.max(timeYBase, maxAbsDisp || 0);
+    timeTickStep = getNiceStep(timeYRange * 2, 6);
+    const forceScale = maxAbsForce > 0 ? timeYRange / maxAbsForce : 1;
+    for (let i = 0; i < sampleCount; i += 1) {
+      forceScaledHistory[i] = (forceHistory[i] ?? 0) * forceScale;
+    }
+    timeDirty = true;
+  };
+
   // --- Update system matrices when controls change ---
   const syncSystemParameters = () => {
     if (
@@ -585,6 +718,137 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     lastForceFrequency = forceFrequency;
     lastTunedEnabled = tunedMassDamperEnabled;
     bodeDirty = true;
+    computeTimeSeries();
+  };
+
+  const getTimeBoundingBox = () => {
+    const xMin = 0;
+    const xMax = timeWindowSec;
+    const yMin = -timeYRange;
+    const yMax = timeYRange;
+    const padLeft = Math.max(0.8, timeWindowSec * 0.05);
+    const padRight = Math.max(0.2, timeWindowSec * 0.02);
+    const padTop = Math.max(0.08, timeYRange * 0.25);
+    const padBottom = Math.max(0.08, timeYRange * 0.25);
+    return [xMin - padLeft, yMax + padTop, xMax + padRight, yMin - padBottom];
+  };
+
+  const initTimeBoard = () => {
+    if (timeBoard) {
+      JXG.JSXGraph.freeBoard(timeBoard);
+      timeBoard = null;
+    }
+    timeBoard = JXG.JSXGraph.initBoard(timeMount.id, {
+      boundingbox: getTimeBoundingBox(),
+      axis: false,
+      grid: false,
+      showCopyright: false,
+      showNavigation: false,
+    });
+    timeBoard.options.grid = false;
+    if (timeBoard.hasGrid && typeof timeBoard.removeGrids === "function") {
+      timeBoard.removeGrids();
+    }
+
+    timeBoard.suspendUpdate();
+    const xMin = 0;
+    const xMax = timeWindowSec;
+    const yMin = -timeYRange;
+    const yMax = timeYRange;
+    const axisStyle = {
+      strokeColor: bodeColors.axis,
+      highlight: false,
+      fixed: true,
+      straightFirst: false,
+      straightLast: false,
+      firstArrow: false,
+      lastArrow: false,
+    };
+    const xStep = getNiceStep(timeWindowSec, 6);
+    const yStep = timeTickStep || 0.05;
+    timeBoard.create("axis", [[xMin, 0], [xMax, 0]], {
+      ...axisStyle,
+      ticksAutoPos: false,
+      ticks: {
+        ticksDistance: xStep,
+        minorTicks: 1,
+        drawLabels: false,
+        drawZero: true,
+        drawGrid: false,
+        majorHeight: 8,
+        minorHeight: 4,
+      },
+    });
+    timeBoard.create("axis", [[0, yMin], [0, yMax]], {
+      ...axisStyle,
+      ticksAutoPos: false,
+      ticks: {
+        ticksDistance: yStep,
+        minorTicks: 1,
+        drawLabels: true,
+        drawZero: false,
+        drawGrid: false,
+        majorHeight: 8,
+        minorHeight: 4,
+        label: {
+          anchorX: "right",
+          anchorY: "middle",
+          offset: [-6, 0],
+          cssStyle: "background: rgba(255,255,255,0.7); padding: 0 2px; display: inline-block;",
+        },
+      },
+    });
+    for (let x = 0; x <= timeWindowSec + 1e-9; x += xStep) {
+      timeBoard.create("text", [x, 0, formatValue(x, xStep)], {
+        anchorX: "middle",
+        anchorY: "top",
+        offset: [0, 10],
+        fontSize: 11,
+        strokeColor: bodeColors.axis,
+        cssStyle: "background: rgba(255,255,255,0.7); padding: 0 2px; display: inline-block;",
+        fixed: true,
+      });
+    }
+    timeBoard.create("text", [xMax, yMin + (yMax - yMin) * 0.05, "s"], {
+      anchorX: "right",
+      anchorY: "bottom",
+      fontSize: 11,
+      strokeColor: bodeColors.axis,
+    });
+    timeBoard.create("text", [xMin + (xMax - xMin) * 0.02, yMax, "x"], {
+      anchorX: "left",
+      anchorY: "top",
+      fontSize: 11,
+      strokeColor: bodeColors.axis,
+    });
+    timeBoard.create("curve", [timeHistory, disp1History], {
+      strokeColor: bodeColors.m1,
+      strokeWidth: 2,
+      highlight: false,
+      fixed: true,
+    });
+    timeBoard.create("curve", [timeHistory, disp2History], {
+      strokeColor: bodeColors.m2,
+      strokeWidth: 2,
+      highlight: false,
+      fixed: true,
+    });
+    timeBoard.create("curve", [timeHistory, forceScaledHistory], {
+      strokeColor: bodeColors.excitation,
+      strokeWidth: 1.5,
+      dash: 2,
+      highlight: false,
+      fixed: true,
+    });
+    timeBoard.unsuspendUpdate();
+  };
+
+  const updateTimePlot = (t) => {
+    if (!timeBoard || timeDirty) {
+      initTimeBoard();
+    }
+    timeBoard.setBoundingBox(getTimeBoundingBox(), false);
+    timeBoard.update();
   };
 
   // Pick a nice tick spacing based on range and target tick count.
@@ -989,10 +1253,25 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     const bodeRect = bodeMount.getBoundingClientRect();
     bodeWidth = bodeMount.clientWidth || bodeRect.width || 300;
     bodeHeight = bodeMount.clientHeight || bodeRect.height || 250;
-    if (bodeBoard) {
-      bodeBoard.resizeContainer(bodeWidth, bodeHeight);
+    if (bodeBoard && bodeBoard.renderer) {
+      try {
+        bodeBoard.resizeContainer(bodeWidth, bodeHeight);
+      } catch (err) {
+        // Board can be disposed during rapid resize/zoom; ignore.
+      }
     }
     bodeDirty = true;
+    const timeRect = timeMount.getBoundingClientRect();
+    timeWidth = timeMount.clientWidth || timeRect.width || 300;
+    timeHeight = timeMount.clientHeight || timeRect.height || 200;
+    if (timeBoard && timeBoard.renderer) {
+      try {
+        timeBoard.resizeContainer(timeWidth, timeHeight);
+      } catch (err) {
+        // Board can be disposed during rapid resize/zoom; ignore.
+      }
+    }
+    timeDirty = true;
 
     centerX = width / 2;
     groundY = height - 28;
@@ -1009,6 +1288,7 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
 
   // Initial sizing before the first frame.
   resize();
+  computeTimeSeries();
 
 
   // Debug helper: draw anchor points for a mass.
@@ -1033,12 +1313,39 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     drawAnchorPoint({ x: msd.mass.x, y: msd.mass.y + msd.mass.height });
     drawAnchorPoint({ x: msd.mass.x + msd.mass.width, y: msd.mass.y + msd.mass.height });
   };
+  const drawDebugHud = (t, fpsValue) => {
+    ctx.save();
+    ctx.font = "12px monospace";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#111";
+    ctx.globalAlpha = 0.85;
+    const lines = [
+      `t=${t.toFixed(2)}s`,
+      `f=${forceFrequency.toFixed(2)}Hz`,
+      `scale=${lastLayoutScale.toFixed(2)}`,
+      `fps=${fpsValue.toFixed(1)}`,
+    ];
+    const pad = 6;
+    const lineHeight = 14;
+    const boxWidth = 140;
+    const boxHeight = pad * 2 + lineHeight * lines.length;
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.fillRect(pad, pad, boxWidth, boxHeight);
+    ctx.fillStyle = "#111";
+    lines.forEach((line, idx) => {
+      ctx.fillText(line, pad * 2, pad * 2 + idx * lineHeight);
+    });
+    ctx.restore();
+  };
 
   // --- Animation loop state ---
   let start = performance.now();
   let laststeptime = null;
   let animationId = null;
   let disposed = false;
+  let frameCount = 0;
+  let lastFpsSample = performance.now();
+  let fps = 0;
 
   // Cleanup for re-init or hot reload.
   const cleanup = () => {
@@ -1050,6 +1357,10 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     if (bodeBoard) {
       JXG.JSXGraph.freeBoard(bodeBoard);
       bodeBoard = null;
+    }
+    if (timeBoard) {
+      JXG.JSXGraph.freeBoard(timeBoard);
+      timeBoard = null;
     }
   };
   target._msdAnchorsCleanup = cleanup;
@@ -1084,6 +1395,10 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     LastTime = now;
 
     let Newposition2 = NewMSDState.position.toArray();
+    if (timeDirty) {
+      updateTimePlot(t);
+      timeDirty = false;
+    }
 
     // Clear canvas for the next frame.
     ctx.clearRect(0, 0, width, height);
@@ -1105,7 +1420,20 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     if (tunedMassDamperEnabled) {
       msdTop.render(ctx, rc, {}, Newposition2[1]+0.5);
     }
-    // drawMassAnchors(msdBottom); // Uncomment to visualize anchor points.
+    if (debugState.enabled) {
+      drawMassAnchors(msdBottom);
+      if (tunedMassDamperEnabled) {
+        drawMassAnchors(msdTop);
+      }
+      frameCount += 1;
+      const elapsed = now - lastFpsSample;
+      if (elapsed > 500) {
+        fps = (frameCount * 1000) / elapsed;
+        frameCount = 0;
+        lastFpsSample = now;
+      }
+      drawDebugHud(t, fps);
+    }
 
     animationId = window.requestAnimationFrame(animate);
   };

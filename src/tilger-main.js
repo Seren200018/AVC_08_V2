@@ -9,6 +9,7 @@ window.addEventListener("DOMContentLoaded", () => {
     initMassSpringDamperAnchorsDemo(msdAnchorDemo, {
       bodeTargetId: "MSD_Anchor_middle_Div",
       controlsTargetId: "MSD_Anchor_rightmost_Div",
+      timeTargetId: "MSD_Anchor_time_Div",
     });
   }
 });
