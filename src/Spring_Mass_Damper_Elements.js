@@ -989,7 +989,7 @@ export class MassSpringDamperSystemTimeFreqDomainHandmade { // Input should be m
 
       let dt = t-this.lastanim; 
       if (dt > 10) dt = 10;
-      let result = math.solveODE(CalculateStatechange,[0,dt],[this.state], {maxStep:0.1});
+      let result = math.solveODE(CalculateStatechange, [0, dt], [this.state], {maxStep: 0.3});
       this.lastanim = t;
       this.state = math.flatten(result.y[result.y.length - 1]);
 

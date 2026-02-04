@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:tilger": "vite --open /main.html",
-    "dev:debug": "vite --mode debug --open /main.html",
+    "dev:debug": "node tools/dev-firefox-profile.js",
+    "dev:debug:vite": "vite --mode debug --open /main.html",
     "build": "vite build",
     "build:pages": "vite build",
     "build:debug": "vite build --mode debug",

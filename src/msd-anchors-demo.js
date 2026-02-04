@@ -165,7 +165,7 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   const timeScenarioOptions = [
     { value: "force", label: "Actuated by force" },
     { value: "initial", label: "Initial displacement x1 = 0.1" },
-    { value: "ground", label: "Ground step 0→0.1 at 1s, 0.1→0 at 2s" },
+    {value: "ground", label: "Ground step 0→0.1 at 1s, 0.1→0 at 1.5s"},
   ];
   let timeScenario = "force";
   const timeScenarioRow = document.createElement("label");
@@ -638,7 +638,7 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   const bodeConfig = {
     freqMin: forceFrequencyRange.min,
     freqMax: forceFrequencyRange.max,
-    samples: 240,
+    samples: 80,
     snapHz: 0.08,
   };
 
@@ -700,12 +700,12 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
       const ramp = 0.05;
       previewSystem.calcForceAtTime = (t) => {
         const up = smoothStep(t, 1, 1 + ramp);
-        const down = smoothStep(t, 2, 2 + ramp);
+        const down = smoothStep(t, 1.5, 1.5 + ramp);
         const xg = 0.1 * (up - down);
         const xgDot =
           0.1 *
           (smoothStepDerivative(t, 1, 1 + ramp) -
-            smoothStepDerivative(t, 2, 2 + ramp));
+              smoothStepDerivative(t, 1.5, 1.5 + ramp));
         const baseForce = BottomStiffness * xg + BottomDamping * xgDot;
         return [baseForce, 0];
       };
@@ -800,6 +800,10 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
 
   const initTimeBoard = () => {
     if (timeBoard) {
+      if (timeBoard.resizeObserver) {
+        timeBoard.resizeObserver.disconnect();
+        timeBoard.resizeObserver = null;
+      }
       JXG.JSXGraph.freeBoard(timeBoard);
       timeBoard = null;
     }
@@ -810,6 +814,10 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
       showCopyright: false,
       showNavigation: false,
     });
+    if (timeBoard.resizeObserver) {
+      timeBoard.resizeObserver.disconnect();
+      timeBoard.resizeObserver = null;
+    }
     timeBoard.options.grid = false;
     if (timeBoard.hasGrid && typeof timeBoard.removeGrids === "function") {
       timeBoard.removeGrids();
@@ -1122,22 +1130,28 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
       bodeSnapTargets.push(antiResonance);
     }
 
-    // Rebuild the board when parameters change.
-    if (bodeBoard) {
-      JXG.JSXGraph.freeBoard(bodeBoard);
-      bodeBoard = null;
+    // Build board once; reuse and just redraw contents.
+    if (!bodeBoard) {
+      bodeBoard = JXG.JSXGraph.initBoard(bodeMount.id, {
+        boundingbox: [xMin - 0.1, yMax, xMax, yMin - 5],
+        axis: false,
+        pan: {enabled: false},
+        zoom: {enabled: false},
+        showNavigation: false,
+        showCopyright: false,
+      });
+      if (bodeBoard.resizeObserver) {
+        bodeBoard.resizeObserver.disconnect();
+        bodeBoard.resizeObserver = null;
+      }
     }
 
-    bodeBoard = JXG.JSXGraph.initBoard(bodeMount.id, {
-      boundingbox: [xMin-0.1, yMax, xMax, yMin-5],
-      axis: false,
-      pan: { enabled: false },
-      zoom: { enabled: false },
-      showNavigation: false,
-      showCopyright: false,
-    });
-
     bodeBoard.suspendUpdate();
+    bodeBoard.setBoundingBox([xMin - 0.1, yMax, xMax, yMin - 5], false);
+    const objects = bodeBoard.objectsList.slice();
+    if (objects.length) {
+      bodeBoard.removeObject(objects);
+    }
 
     // Axes and tick marks.
     const axisColor = bodeColors.axis;
@@ -1300,6 +1314,9 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
       const clamped = Math.min(bodeConfig.freqMax, Math.max(bodeConfig.freqMin, rawFreq));
       resetSimulation();
       updateForceFrequency(clamped, { snap: true });
+      drawBodePlot();
+      bodeDirty = false;
+      lastBodeDraw = performance.now();
     });
 
     bodeBoard.unsuspendUpdate();
@@ -1417,6 +1434,8 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
   let frameCount = 0;
   let lastFpsSample = performance.now();
   let fps = 0;
+  let lastBodeDraw = 0;
+  const bodeDrawInterval = 150;
 
   // Cleanup for re-init or hot reload.
   const cleanup = () => {
@@ -1426,10 +1445,18 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
       animationId = null;
     }
     if (bodeBoard) {
+      if (bodeBoard.resizeObserver) {
+        bodeBoard.resizeObserver.disconnect();
+        bodeBoard.resizeObserver = null;
+      }
       JXG.JSXGraph.freeBoard(bodeBoard);
       bodeBoard = null;
     }
     if (timeBoard) {
+      if (timeBoard.resizeObserver) {
+        timeBoard.resizeObserver.disconnect();
+        timeBoard.resizeObserver = null;
+      }
       JXG.JSXGraph.freeBoard(timeBoard);
       timeBoard = null;
     }
@@ -1455,8 +1482,11 @@ export function initMassSpringDamperAnchorsDemo(target, options = {}) {
     // Sync model matrices if any inputs changed.
     syncSystemParameters();
     if (bodeDirty) {
-      drawBodePlot();
-      bodeDirty = false;
+      if (now - lastBodeDraw >= bodeDrawInterval) {
+        drawBodePlot();
+        bodeDirty = false;
+        lastBodeDraw = now;
+      }
     }
 
     // Advance the simulation and fetch the new positions.
